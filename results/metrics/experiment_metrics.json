@@ -1,0 +1,30 @@
+{
+  "settings": {
+    "seed": 7,
+    "euler_step_for_decay_experiments": 0.01,
+    "euler_step_for_SI_experiment": 0.2,
+    "optimizer": "Adam",
+    "learning_rate_for_decay_experiments": 0.001,
+    "learning_rate_for_SI_experiment": 0.001,
+    "updates_for_decay_experiments": 2000,
+    "updates_for_SI_experiment": 500,
+    "SI_note": "The SI example uses h = 0.2 and 500 updates instead of h = 0.01 and 2000 updates because differentiating through 1500 Euler steps per update was too slow on the available CPU. The purpose is an understandable teaching demonstration, not hyperparameter optimization."
+  },
+  "experiment_1_euler": {
+    "maximum_error_h_0_5": 0.08932894468307495,
+    "maximum_error_h_0_05": 0.007482767105102539
+  },
+  "experiment_2_parameter_learning": {
+    "learned_theta": 0.7864130139350891,
+    "final_loss": 9.877128832158633e-06
+  },
+  "experiment_3_neural_decay": {
+    "final_loss": 1.0183727681578603e-05,
+    "derivative_mse_on_observed_range": 0.0002245289069833234
+  },
+  "experiment_4_neural_si": {
+    "final_loss": 0.017337720841169357,
+    "test_trajectory_rmse_at_I0_0_05": 0.11445485055446625,
+    "derivative_mse_on_S_plus_I_equals_1": 0.010632348246872425
+  }
+}

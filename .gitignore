@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.venv/
+report/*.aux
+report/*.log
+report/*.out
+report/*.pdf
+report/*.toc
+results/checkpoints/

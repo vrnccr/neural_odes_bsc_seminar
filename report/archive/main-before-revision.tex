@@ -1,0 +1,1242 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[english]{babel}
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{csquotes}
+\usepackage{amsmath,amssymb,booktabs,tabularx,array,graphicx}
+\usepackage{enumitem}
+\usepackage[most]{tcolorbox}
+\usepackage{multicol}
+\usepackage{wrapfig}
+\usepackage[hidelinks]{hyperref}
+\usepackage[compact]{titlesec}
+\usepackage[font=small,skip=4pt]{caption}
+\titlespacing*{\section}{0pt}{8pt}{4pt}
+\titlespacing*{\subsection}{0pt}{6pt}{2pt}
+\setlength{\textfloatsep}{8pt plus 2pt minus 2pt}
+\setlength{\floatsep}{8pt plus 2pt minus 2pt}
+\setlength{\intextsep}{8pt plus 2pt minus 2pt}
+\setlength{\parskip}{1pt}
+\graphicspath{{images/}}
+
+% ---------------------------------------------------------------------------
+%  Boxes
+% ---------------------------------------------------------------------------
+\newtcolorbox{kaobox}[1][]{
+  colback=gray!5,
+  colframe=gray!55,
+  boxrule=0.5pt,
+  arc=2pt,
+  left=6pt, right=6pt, top=6pt, bottom=6pt,
+  #1
+}
+
+% ---------------------------------------------------------------------------
+%  Figure placeholder: \figph{<width>}{<file name>}
+%  Replace by  \includegraphics[width=<width>]{<file name>}  once the image
+%  exists in images/.
+% ---------------------------------------------------------------------------
+\newcommand{\figph}[2]{%
+  \fbox{\parbox[c][3.2cm][c]{\dimexpr#1-2\fboxsep-2\fboxrule\relax}{%
+    \centering\small\ttfamily [figure: #2]}}}
+
+% ---------------------------------------------------------------------------
+%  Shorthand
+% ---------------------------------------------------------------------------
+\newcommand{\sir}{\mathrm{SIR}}
+\newcommand{\gnode}{\mathrm{GN\text{-}ODE}}
+\newcommand{\dmp}{\mathrm{DMP}}
+\newcommand{\gcn}{\mathrm{GCN}}
+
+\begin{document}
+\hypersetup{pageanchor=false}
+
+% ===========================================================================
+%  TITLE PAGE
+% ===========================================================================
+\begin{titlepage}
+\centering
+\vspace*{0.8cm}
+
+\figph{4cm}{KU\_Logo.png}
+
+\vfill
+
+\rule{\linewidth}{0.5pt}\\[0.7cm]
+{\Huge\bfseries Understanding Neural Ordinary Differential Equations\par}
+\vspace{0.5cm}
+{\LARGE From Simple  Models to Network Epidemics\par}
+\vspace{0.7cm}
+\rule{\linewidth}{0.5pt}
+
+\vfill
+
+{\large\bfseries Bachelor Seminar}\\[1.6cm]
+
+\begin{tabular}{rl}
+\textbf{Presented by} & Veronika Rybak \\[4pt]
+\textbf{Supervisor}   & Prof.\ Dr.\ Nadja Ray \\
+\end{tabular}
+
+\vfill
+{\footnotesize This document accompanies the seminar slides and is intended as a reading and revision handout.}\\[0.3cm]
+{\footnotesize\today}
+\end{titlepage}
+
+\hypersetup{pageanchor=true}
+
+% ===========================================================================
+%  FRONT MATTER
+% ===========================================================================
+\pagenumbering{roman}
+\tableofcontents
+\newpage
+\pagenumbering{arabic}
+
+\begin{kaobox}[title=Central question of the seminar]
+\emph{How can a neural network learn a differential equation?}
+A Neural Ordinary Differential Equation does not learn the solution of a system
+directly; it learns the rule by which the system changes, and an ODE solver turns
+that rule into trajectories. This report builds up this idea on two small
+examples that can be checked completely, exponential decay and the SI epidemic
+model, and then follows it to a research model for epidemic spreading on contact
+networks.
+\end{kaobox}
+
+\section*{Abstract}
+\addcontentsline{toc}{section}{Abstract}
+
+This report summarizes a bachelor seminar on Neural Ordinary Differential
+Equations (Neural ODEs). The first part introduces the necessary theory of
+ordinary differential equations, initial value problems, vector fields, and the
+Euler method, and explains the Neural ODE as a learned right-hand side of an
+ODE. Each concept is illustrated on the exponential decay equation, including a
+one-parameter Neural ODE that learns the decay rate.
+
+The second part transfers the same construction to the two-dimensional SI
+epidemic model. Own experiments show that a structured Neural ODE recovers the
+infection rate from data, that an unstructured network can learn the SI vector
+field, and what ``learning the dynamics'' means when the initial condition is
+changed. The third part uses this vocabulary to present the Graph Neural ODE
+(GN-ODE) model of Kosma et al.\ (2023) for epidemic spreading on contact
+networks, where the state consists of one epidemic variable per node and the
+interactions are given by the graph. The main conclusion is that Neural ODEs are
+most useful when they extend an existing scientific model rather than replace it.
+
+
+\section{ODE Foundations}
+
+\subsection{Ordinary Differential Equations}
+
+An Ordinary Differential Equation (ODE) describes how a quantity changes over
+time instead of directly giving its value. A common first-order ODE has the form
+\begin{equation}
+  \frac{dy(t)}{dt} = f\bigl(y(t),t\bigr),
+  \label{eq:ode}
+\end{equation}
+where $y(t)$ is the state of the system at time $t$, $dy(t)/dt$ is its rate of
+change, and $f$ defines how the system evolves. The unknown in an ODE is a
+\emph{function} $y(t)$ rather than a single number, which is the main difference
+from an algebraic equation. The word \emph{ordinary} means that the equation
+contains derivatives with respect to only one independent variable, here time.
+
+The key idea is that an ODE provides a \emph{local rule of motion}. If we know
+the current state and the current time, the equation tells us in which direction
+and how fast the state is changing at that moment only; it does not tell us the whole
+curve. This idea appears in many applications, including population growth,
+radioactive decay, and the motion of a pendulum.
+
+\subsection{A simple scalar ODE: exponential decay}
+
+A well-known example is exponential decay, where a quantity decreases at a rate
+proportional to its current value:
+\begin{equation}
+  \frac{dy}{dt} = -\lambda y, \qquad \lambda > 0 .
+  \label{eq:decay}
+\end{equation}
+Here $f(y,t) = -\lambda y$ does not depend on $t$ explicitly. Its analytical
+solution, obtained by separating the variables, is
+\begin{equation}
+  y(t) = y_0\, e^{-\lambda t}.
+  \label{eq:decay-sol}
+\end{equation}
+Since the rate of change is proportional to the current value, larger values
+decrease faster than smaller ones. As a result, the curve becomes flatter as it
+approaches zero, as it is demonstrated in Figure 1. The parameter $\lambda$ controls how quickly this happens.
+
+\begin{figure}[h]
+  \centering
+  \figph{0.6\textwidth}{fig1\_exp\_decay}
+  \caption{Exponential decay as a scalar ODE; the decay rate $\lambda$ controls
+  how quickly the trajectory falls. Source code is provided in Appendix.}
+  \label{fig:decay}
+\end{figure}
+
+Exponential decay is used as a running example throughout the first part of the
+report: every concept introduced below (initial value problems, vector fields,
+numerical solvers, and finally the Neural ODE itself) is first illustrated on
+Equation~\eqref{eq:decay}.
+
+\subsection{Initial value problems}
+
+An ODE alone does not determine a single trajectory. For the decay equation, every
+function $y(t) = C e^{-\lambda t}$ solves \eqref{eq:decay}, for any constant $C$.
+To select one solution, an initial condition is needed. Together,
+\begin{equation}
+  \frac{dy}{dt} = f(y,t), \qquad y(t_0) = y_0
+  \label{eq:ivp}
+\end{equation}
+form an \emph{initial value problem} (IVP). The ODE defines \emph{how} the system
+changes, while the initial condition determines \emph{where} it begins. In the
+decay example, $y(0) = y_0$ fixes $C = y_0$ and yields \eqref{eq:decay-sol}.
+
+If $f$ is continuous in $t$ and locally Lipschitz continuous in $y$, then
+for every initial condition there exists a unique solution, at least locally
+around the initial time (Picard--Lindel\"of theorem). Thus, on an interval
+where the solution exists, a given initial state determines one unique
+trajectory. This is important for Neural ODEs, where the input is used as the
+initial state of an initial value problem.
+
+\begin{figure}[h]
+  \centering
+  \figph{0.6\textwidth}{fig2\_three\_initial\_values}
+  \caption{The same decay rule with three different initial values $y_0$ yields
+  three distinct trajectories. Source code is provided in Appendix.}
+  \label{fig:three-ivs}
+\end{figure}
+
+\subsection{From local derivatives to trajectories}
+
+An ODE tells us how the system changes at its current state. For a scalar
+equation such as exponential decay,
+\[
+    \frac{dy}{dt}=-\lambda y,
+\]
+the value $-\lambda y$ gives the slope of the trajectory at the current value
+of $y$. When $y$ is large, the slope is more negative; as $y$ approaches zero,
+the slope becomes smaller. This explains why the decay curve becomes flatter
+over time.
+
+For a system with several variables, the state is a vector
+$y(t)\in\mathbb{R}^d$, and the function $f$ returns a vector of derivatives.
+These derivative vectors describe the direction in which the state moves.
+Taken together, they form a \emph{vector field}.
+
+The idea of a vector field is important for Neural ODEs because the neural
+network will later play exactly this role: it will learn a function
+$f_\theta$ that takes the current state and returns its derivative. A concrete
+two-dimensional vector field will be shown later for the SI epidemic model in
+Section~\ref{sec:si-field}.
+
+Knowing the derivative at one point is not yet the same as knowing the whole
+trajectory. To obtain the trajectory, an ODE solver repeatedly evaluates the
+derivative and moves the state forward in time. The simplest example is the
+forward Euler method,
+\begin{equation}
+    y_{n+1}=y_n+h\,f(y_n,t_n),
+    \label{eq:euler}
+\end{equation}
+where $h$ is the step size.
+
+For exponential decay this becomes
+\begin{equation}
+    y_{n+1}=y_n-h\lambda y_n.
+\end{equation}
+Starting from $y_0$, Euler's method repeatedly uses the current slope to
+approximate the next value. Smaller step sizes usually follow the exact decay
+curve more closely, as shown in Figure~\ref{fig:euler}.
+
+\begin{figure}[h]
+    \centering
+    \figph{0.95\textwidth}{fig4\_euler\_decay}
+    \caption{Euler's method approximates the exponential-decay trajectory by
+    repeatedly moving in the direction given by the current derivative. A
+    smaller step size gives a closer approximation to the exact solution. Source code is provided in Appendix.}
+    \label{fig:euler}
+\end{figure}
+
+This separation between the two tasks will be important later: the function
+$f$ provides the local derivative, while the numerical solver uses these
+derivatives to construct the trajectory.
+
+% =====================================================================
+\section{From Numerical Solvers to Neural ODEs}
+
+\subsection{Residual networks as motivation}
+
+The historical motivation for Neural ODEs comes from residual networks. A
+residual block updates a hidden state according to
+\begin{equation}
+    h_{k+1}=h_k+F_k(h_k;\theta_k),
+\end{equation}
+which has the same algebraic form as one Euler step,
+\[
+    y_{n+1}=y_n+h f(y_n,t_n):
+\]
+the new state is the current state plus a change computed from that state.
+
+This observation suggests interpreting the layer index $k$ as a discrete time
+variable. A residual network can then be viewed as a discrete dynamical system.
+Neural ODEs take the corresponding continuous limit: instead of specifying one
+update for each discrete layer, a single function $f_\theta$ specifies the
+instantaneous rate of change continuously in time. This connection explains the motivation behind Neural ODEs. From this point
+on, however, we will focus directly on the ODE viewpoint: the neural network
+defines the derivative, and the numerical solver constructs the trajectory.
+
+\subsection{The Neural ODE: core formulation}
+
+A Neural ODE replaces a sequence of discrete updates by a continuous
+dynamical system. Instead of moving through states
+\[
+    h_0 \to h_1 \to \cdots \to h_L,
+\]
+the state evolves continuously according to
+\begin{equation}
+    \frac{dh(t)}{dt}
+    =
+    f_\theta\bigl(h(t),t\bigr),
+    \label{eq:node}
+\end{equation}
+where $f_\theta$ is a neural network with trainable parameters $\theta$.
+
+The role of $f_\theta$ is the same as the function $f$ in an ordinary
+differential equation: given the current state, it returns the instantaneous
+rate of change. Starting from an initial state $h(0)$, an ODE solver repeatedly
+evaluates $f_\theta$ and uses these derivatives to construct the trajectory
+$h(t)$.
+
+Formally, the state at a later time $T$ satisfies
+\begin{equation}
+    h(T)
+    =
+    h(0)
+    +
+    \int_0^T
+    f_\theta\bigl(h(t),t\bigr)\,dt .
+    \label{eq:odesolve}
+\end{equation}
+
+The important difference from an ordinary neural network is therefore that
+$f_\theta$ does not directly compute the final output. It defines how the
+state changes locally, while the ODE solver combines these local changes to
+produce the trajectory.
+
+\paragraph{A simple trainable example: exponential decay.}
+
+The exponential-decay example can be used to show the learning idea in the
+simplest possible setting. Suppose the true system is
+\[
+    \frac{dy}{dt}=-\lambda y,
+\]
+but the decay rate $\lambda$ is unknown. We replace it by a trainable
+parameter $\theta$ and use
+\begin{equation}
+    f_\theta(y)=-\theta y.
+    \label{eq:toy-field}
+\end{equation}
+
+The resulting model is
+\[
+    \frac{dy}{dt}=-\theta y,
+    \qquad
+    y(0)=y_0.
+\]
+For a given value of $\theta$, the ODE solver produces a trajectory. This
+trajectory can be compared with observed data, and $\theta$ can then be
+adjusted to reduce the difference. If the data were generated using the true
+decay rate $\lambda$, training should recover a value of $\theta$ close to
+$\lambda$.
+
+This example does not yet learn an unknown functional form: the structure
+$-\theta y$ is already built into the model, and only one parameter is
+learned. Its purpose is to make the Neural ODE training idea transparent
+before moving to a neural network that learns the derivative function itself.
+
+\subsection{What the network learns}
+
+A Neural ODE learns the function $f_\theta$ that describes how the current
+state changes. The ODE solver then uses this function to construct the
+trajectory.
+
+In the exponential-decay example,
+\[
+    f_\theta(y)=-\theta y,
+\]
+so training changes the parameter $\theta$. Once $\theta$ has been learned,
+the same differential equation can be solved from different initial values
+$y_0$. The initial value determines where the trajectory starts, while
+$f_\theta$ determines how it evolves.
+
+For this simple example, the functional form $-\theta y$ is already known and
+only the decay rate is learned. Later, in the SI example, $f_\theta$ will also
+be represented by a neural network, so that more of the derivative function
+can be learned from data.
+
+\begin{figure}[h]
+    \centering
+    \figph{0.6\textwidth}{fig7\_chen\_resnet\_vs\_ode}
+    \caption{Residual network (left) and Neural ODE (right). A residual network
+    performs a sequence of discrete updates, whereas a Neural ODE describes the
+    state continuously through a differential equation. Original figure:
+    Chen et al.\ (2018), Fig.~1.}
+    \label{fig:chen}
+\end{figure}
+
+\subsection{Training a Neural ODE}
+
+Training changes the parameters $\theta$ of the derivative function
+$f_\theta$. The basic procedure is:
+
+\begin{enumerate}
+    \item[(1)] \textbf{Forward solve:}
+    starting from the initial state, the ODE solver uses the current
+    $f_\theta$ to produce a predicted trajectory.
+
+    \item[(2)] \textbf{Loss:}
+    the predicted states are compared with the observed data. For example,
+    for observations $y^*(t_k)$ we can use
+    \[
+        L(\theta)
+        =
+        \sum_k
+        \left(
+            y_\theta(t_k)-y^*(t_k)
+        \right)^2 .
+    \]
+
+    \item[(3)] \textbf{Gradient computation:}
+    the loss is differentiated with respect to the parameters $\theta$.
+
+    \item[(4)] \textbf{Parameter update:}
+    the parameters are changed in a direction that reduces the loss,
+    \[
+        \theta
+        \leftarrow
+        \theta-\eta\frac{\partial L}{\partial\theta},
+    \]
+    where $\eta$ is the learning rate.
+\end{enumerate}
+
+The important point is that training does not directly modify the trajectory.
+It modifies $f_\theta$. When the ODE is solved again with the updated
+$f_\theta$, a different trajectory is produced.
+
+\begin{figure}[h]
+    \centering
+    \figph{0.95\textwidth}{fig8\_training\_loop}
+    \caption{Training a Neural ODE: solve the ODE, compare the predicted
+    trajectory with the data, compute the gradient, and update the parameters
+    of $f_\theta$.}
+    \label{fig:training}
+\end{figure}
+
+\paragraph{Differentiating through the solver.}
+
+To update the parameters $\theta$, the loss must be differentiated with
+respect to them. Since the predicted trajectory is produced by the ODE solver,
+this means differentiating through the solver steps. For the simple Euler-based
+experiments in this report, this can be done directly using the chain rule.
+
+\begin{figure}[h]
+    \centering
+    \figph{0.95\textwidth}{fig\_toy\_neural\_ode}
+    \caption{Training the model $dy/dt=-\theta y$. Left: the trajectory before
+    and after training compared with the reference trajectory. Right: the
+    learned parameter $\theta$ approaches the true decay rate $\lambda$.}
+    \label{fig:toy}
+\end{figure}
+
+
+\section{From Exponential Decay to a Two-Dimensional System: the SI Model}
+\label{sec:si}
+\subsection{The SI equations}
+
+So far the state of the system was a single number $y(t)$. Epidemic models
+describe how a population moves between health states, so several quantities
+change at the same time. The simplest such model is the \emph{SI model}, in which
+individuals are either susceptible ($S$) or infected ($I$) and, once infected,
+stay infected. We use population \emph{fractions}, so that
+\begin{equation}
+  S(t) + I(t) = 1 .
+  \label{eq:si-conservation}
+\end{equation}
+The dynamics are
+\begin{equation}
+  \frac{dS}{dt} = -\beta\, S I, \qquad \frac{dI}{dt} = \beta\, S I,
+  \label{eq:si}
+\end{equation}
+with a single parameter $\beta>0$, the infection (or contact) rate.
+
+\paragraph{Meaning of the terms.}
+The product $SI$ measures how often susceptible and infected individuals meet:
+if either group is small, meetings are rare. Each meeting transmits the disease
+at rate $\beta$. The term $-\beta SI$ removes these individuals from the
+susceptible group, and the same amount $+\beta SI$ enters the infected group.
+Adding the two equations gives $d(S+I)/dt = 0$, which is why
+\eqref{eq:si-conservation} holds for all times, not only at $t=0$.
+
+\paragraph{Connection to the scalar example.}
+In Section~1 the ODE was $dy/dt = -\lambda y$ with one state variable. The SI
+model has the same structure with two state variables. Writing the state as a
+vector $\mathbf{x} = (S,I)^\top$, the two equations \eqref{eq:si} become one
+vector-valued ODE,
+\begin{equation}
+  \frac{d}{dt}\begin{pmatrix} S \\ I \end{pmatrix}
+  = \begin{pmatrix} -\beta SI \\ \beta SI \end{pmatrix}
+  = f(\mathbf{x}),
+  \qquad \text{i.e.}\qquad \dot{\mathbf{x}} = f(\mathbf{x}),
+  \label{eq:si-vector}
+\end{equation}
+which is exactly the form \eqref{eq:ode} with $d=2$. Everything from
+Section~1 carries over: an initial condition $(S(0),I(0))$ selects one
+trajectory, $f$ is a vector field on the $(S,I)$-plane, and the Euler method
+\eqref{eq:euler} applies componentwise. One difference is that
+$f(\mathbf{x})$ is now nonlinear in the state (because of the product $SI$), so
+there is no simple closed formula to compare with; we rely on the numerical
+solver.
+
+\paragraph{A first simulation.}
+Figure~\ref{fig:si-sim} shows the Euler solution of \eqref{eq:si} with
+$\beta=1$, $S(0)=0.99$, $I(0)=0.01$, step size $h=0.01$. Three phases are
+visible. At the beginning $I$ is small, so the product $SI$ is small and the
+infected fraction grows slowly. As $I$ increases while $S$ is still large, $SI$
+becomes large and the growth is fastest (around $t\approx 4$--$5$, where
+$S\approx I\approx 0.5$ and $SI$ takes its maximum value $0.25$). Finally $S$
+becomes small, $SI$ shrinks again, and $I$ approaches $1$: without recovery,
+eventually everyone is infected. The dotted line confirms that $S+I$ stays equal
+to one throughout.
+
+\begin{figure}[h]
+  \centering
+  \figph{0.65\textwidth}{fig\_si\_simulation}
+  \caption{Numerical solution of the SI model \eqref{eq:si} with $\beta=1$,
+  $S(0)=0.99$, $I(0)=0.01$. The infected fraction follows an S-shaped curve; the
+  sum $S+I$ is conserved.}
+  \label{fig:si-sim}
+\end{figure}
+
+\subsection{The SI model as a vector field}
+\label{sec:si-field}
+
+Section~1.4 called $f$ a vector field. For the SI model this can be drawn:
+in the plane with coordinates $S$ and $I$, every point $(S,I)$ carries the
+vector $f(S,I)$ of \eqref{eq:si-vector}. Figure~\ref{fig:si-field} shows
+these vectors on a grid together with the trajectory of Figure~\ref{fig:si-sim}.
+This picture is needed once, because it is exactly what the neural network in
+Section~\ref{sec:si-node} will have to learn.
+
+A single point makes the picture concrete. At $(S,I) = (0.8,\,0.2)$ with
+$\beta=1$,
+\[
+  f(0.8,0.2) = (-0.8\cdot 0.2,\; 0.8\cdot 0.2) = (-0.16,\; 0.16),
+\]
+so at that moment $S$ decreases at rate $0.16$ and $I$ increases at exactly the
+same rate: the arrow points up and to the left at $45^\circ$. Because the two
+components are always equal and opposite, \emph{every} arrow in the plane has
+this direction; only the length $\sqrt{2}\,\beta SI$ varies. Arrows are longest
+near $S=I=0.5$ and vanish on the axes $S=0$ and $I=0$, where no meetings occur.
+
+Since the arrows are parallel to the line $S+I=1$, a trajectory starting on
+this line stays on it, which is the conservation law \eqref{eq:si-conservation}
+seen geometrically; and since the arrows are longest in the middle, the
+trajectory moves fastest there, which is the S-shape of Figure~\ref{fig:si-sim}
+seen from a different angle.
+
+\begin{figure}[h]
+  \centering
+  \figph{0.55\textwidth}{fig\_si\_phase\_plane}
+  \caption{The SI vector field for $\beta=1$ and the trajectory starting at
+  $(0.99,0.01)$. All arrows point in the direction $(-1,1)$; their length is
+  $\sqrt{2}\,SI$. The trajectory moves along the line $S+I=1$ from the lower right
+  to the upper left, fastest in the middle.}
+  \label{fig:si-field}
+\end{figure}
+
+\section{Turning the SI Model into a Neural ODE}
+\label{sec:si-node}
+
+For exponential decay we replaced the known right-hand side $-\lambda y$ by a
+learned function $f_\theta(y)$ (Section~2.2). We now do the same for the SI
+model. Starting from
+\[
+  \dot{\mathbf{x}} = \begin{pmatrix} -\beta SI \\ \beta SI \end{pmatrix},
+\]
+a Neural ODE replaces some or all of the right-hand side by a learned function
+of the state,
+\begin{equation}
+  \dot{\mathbf{x}} = f_\theta(\mathbf{x}), \qquad \mathbf{x} = (S,I)^\top,
+  \qquad f_\theta : \mathbb{R}^2 \to \mathbb{R}^2 .
+  \label{eq:si-node}
+\end{equation}
+Nothing conceptually new has happened compared with exponential decay. The state
+has changed from one number $y$ to two numbers $S$ and $I$, and the learned
+derivative therefore has two outputs instead of one.
+
+\paragraph{Architecture.}
+The complete model is the following pipeline:
+\[
+  (S,I)\;\longrightarrow\;
+  \boxed{\text{small neural network } f_\theta}\;\longrightarrow\;
+  \Bigl(\tfrac{dS}{dt},\tfrac{dI}{dt}\Bigr)\;\longrightarrow\;
+  \boxed{\text{ODE solver}}\;\longrightarrow\;
+  \bigl(S(t+\Delta t),\, I(t+\Delta t)\bigr).
+\]
+The network never sees a time series and never outputs $S(t)$ or $I(t)$
+directly. It receives the \emph{current state} and returns the
+\emph{instantaneous rate of change} of that state. The solver then advances the
+state by repeatedly asking the network for the derivative, exactly as the Euler
+method repeatedly evaluated $-\lambda y$ in Section~1.4. This division of labour
+is the central point of the report: the network learns the vector field, the
+solver turns it into trajectories.
+
+\paragraph{Two ways to choose $f_\theta$.}
+How much of the right-hand side is learned is a modelling choice.
+\begin{itemize}
+  \item \emph{Structured (grey-box):} keep the SI form and learn only the
+  parameter, $f_\theta(S,I) = (-\theta SI,\ \theta SI)^\top$. This is the exact
+  analogue of $f_\theta(y) = -\theta y$ in Section~2.2.
+  \item \emph{Unstructured (black-box):} let a small multilayer perceptron with
+  input $(S,I)$ and output $(\dot S,\dot I)$ learn the whole vector field, without
+  being told the SI form.
+\end{itemize}
+Both are trained with the four steps of Section~2.4: solve forward from the
+initial condition, compare the resulting $S(t_k), I(t_k)$ with data at the
+observation times $t_k$, compute the gradient, update $\theta$.
+
+\section{Neural ODE Experiments on the SI Model}
+\label{sec:si-experiments}
+
+All data in this section are generated from the SI model \eqref{eq:si} with
+$\beta_{\text{true}} = 1$ and solved with the Euler method, $h = 0.01$, on
+$t\in[0,15]$. Because the data-generating equation is known, every result can be
+checked against the truth.
+
+\subsection{Experiment 1: recovering a known parameter}
+\label{sec:exp1}
+
+We pretend $\beta$ is unknown and use the structured model
+$f_\theta(S,I) = (-\theta SI,\ \theta SI)^\top$ with a single learnable parameter
+$\theta$. The training data are the values $I^*(t_k)$ of the true solution at
+$t_k = 1,2,\dots,15$, starting from $(S_0,I_0) = (0.99,0.01)$. The loss is the
+squared error summed over the observation times,
+\[
+  L(\theta) = \sum_{k} \bigl(I_\theta(t_k) - I^*(t_k)\bigr)^2,
+\]
+where $I_\theta(t_k)$ is the second component of the solver output for the
+current $\theta$. The gradient $\partial L/\partial\theta$ is computed by
+differentiating through the Euler steps, and $\theta$ is updated by gradient
+descent with learning rate $\eta = 0.02$, starting from $\theta_0 = 0.3$.
+
+Figure~\ref{fig:si-beta} shows the result. Before training the model's epidemic
+is far too slow (dashed red). After 60 iterations $\theta = 1.000$, and the
+predicted curve lies on top of the data. The right panel shows that $\theta$
+moves quickly in the first few iterations, when the mismatch is large, and then
+settles; the same qualitative behaviour as for the decay rate in
+Figure~\ref{fig:toy}.
+
+It is important to state precisely what has been learned. In this experiment the
+Neural ODE does not discover an unknown functional form: the SI structure is
+supplied by the model, and training identifies the unknown parameter $\beta$.
+The value of the experiment is that it shows the training loop of Section~2.4
+working on a two-dimensional, nonlinear system, with an answer we can verify.
+
+\begin{figure}[h]
+  \centering
+  \figph{0.95\textwidth}{fig\_si\_beta\_recovery}
+  \caption{Experiment 1. Left: infected fraction from the true model (solid),
+  the observations used for training (dots), and the structured Neural ODE
+  before and after training (dashed). Right: the learned parameter $\theta$
+  converges to $\beta_{\text{true}}=1$.}
+  \label{fig:si-beta}
+\end{figure}
+
+\subsection{Experiment 2: learning the whole SI vector field}
+\label{sec:exp2}
+
+% --- TO RUN. Specification: ---
+% f_theta = MLP 2 -> 16 -> 16 -> 2 (tanh), Euler solver h=0.01 inside the loss,
+% training data: full trajectories S(t),I(t) from (0.99,0.01), (0.95,0.05),
+% (0.90,0.10); loss = MSE over all time points; Adam, ~2000 steps.
+% Figure fig_si_learned_field.png: left true field f(S,I), right learned f_theta(S,I),
+% same grid and arrow scale; overlay the training trajectory on both.
+
+The structured model could only ever produce SI-shaped curves. We now remove
+this prior knowledge and let a small multilayer perceptron
+$f_\theta:\mathbb{R}^2\to\mathbb{R}^2$ (input $(S,I)$, output $(\dot S,\dot I)$,
+two hidden layers) learn the vector field from trajectories generated by
+\eqref{eq:si}. The training loop is unchanged; only the definition of $f_\theta$
+differs.
+
+Figure~\ref{fig:si-learned-field} compares the true vector field $f(S,I)$ with
+the learned $f_\theta(S,I)$ on the same grid as Figure~\ref{fig:si-field}.
+[Describe: where the arrows agree (along and near the training trajectories),
+where they do not (regions far from $S+I=1$, which the training data never
+visited), and that the learned field need not conserve $S+I$ exactly.] With this
+figure the statement ``the neural network learns the vector field'' is no longer
+a general claim; it is something that was trained, plotted, and compared with the
+truth.
+
+\begin{figure}[h]
+  \centering
+  \figph{0.9\textwidth}{fig\_si\_learned\_field}
+  \caption{Experiment 2. Left: true SI vector field. Right: vector field learned
+  by the unstructured Neural ODE. Training trajectories overlaid.}
+  \label{fig:si-learned-field}
+\end{figure}
+
+\subsection{Experiment 3: an unseen initial condition}
+\label{sec:exp3}
+
+% --- TO RUN. Use the trained MLP from Experiment 2. Test initial condition
+% (0.93,0.07), not in the training set. Figure fig_si_unseen_ic.png: true I(t)
+% vs predicted I(t) for the test IC; optionally also one training IC for reference.
+
+The model of Experiment~2 was trained on trajectories starting from
+$I_0 \in \{0.01, 0.05, 0.10\}$. We now start the solver with the learned
+$f_\theta$ from $I_0 = 0.07$, an initial condition that was never used during
+training, and compare with the true solution (Figure~\ref{fig:si-unseen}).
+
+[Describe the agreement.] This is the point where the IVP discussion of
+Section~1.3 pays off. Changing the initial condition does not require learning a
+new trajectory. The solver integrates the same learned differential equation
+from a different starting point, just as Figure~\ref{fig:three-ivs} showed three
+decay curves produced by one rule. The experiment also shows the limit of this
+statement: the new initial condition lies inside the region of the $(S,I)$-plane
+covered by the training data. Starting from a point far outside that region
+would query $f_\theta$ where it was never trained, and the trajectory would not
+be reliable.
+
+\begin{figure}[h]
+  \centering
+  \figph{0.9\textwidth}{fig\_si\_unseen\_ic}
+  \caption{Experiment 3. True and predicted $I(t)$ for the unseen initial
+  condition $I_0=0.07$.}
+  \label{fig:si-unseen}
+\end{figure}
+
+\section{What the Simple Examples Teach}
+\label{sec:lessons}
+
+Before turning to the network model of Kosma et al., we collect what the
+experiments have shown. During prediction, a Neural ODE is the chain
+\[
+  \boxed{\text{state}} \rightarrow \boxed{f_\theta} \rightarrow
+  \boxed{\text{derivative}} \rightarrow \boxed{\text{ODE solver}} \rightarrow
+  \boxed{\text{trajectory}},
+\]
+and during training the chain is closed by
+\[
+  \boxed{\text{trajectory}} \rightarrow \boxed{\text{loss}} \rightarrow
+  \boxed{\text{gradient}} \rightarrow \boxed{\theta\ \text{update}}.
+\]
+Three points carry over to any Neural ODE, however large:
+\begin{enumerate}
+  \item The network models the \emph{derivative}, not the solution. The solution
+  is produced by the solver (Sections~2.3 and~\ref{sec:si-node}).
+  \item Moving from one state variable to two changed nothing in the method; only
+  the dimension of the input and output of $f_\theta$ changed
+  (Section~\ref{sec:si-node}). Moving to many variables, as in the next part,
+  is the same step repeated.
+  \item How much structure is built into $f_\theta$ is a choice. A structured
+  $f_\theta$ (Experiment~1) learns little but is interpretable and needs almost
+  no data; an unstructured $f_\theta$ (Experiment~2) is flexible but reliable
+  only where data exist (Experiment~3). The model of the next part sits in
+  between: it keeps the epidemic structure and learns the parts that are unknown.
+\end{enumerate}
+
+% ===========================================================================
+%  % ===========================================================================
+\section{From the SI Model to Epidemic Spreading on Networks}
+\label{sec:networks}
+% ===========================================================================
+
+The SI example was deliberately simple: the complete state consisted of only
+two numbers, $S(t)$ and $I(t)$, and every individual was treated as part of one
+well-mixed population. The application studied by Kosma et al.\ (2023) retains
+the same basic idea---describe local rates of change by an ODE---but enlarges
+the state in two steps. First, recovery is added. Second, instead of describing
+only population fractions, the epidemic state is represented separately for
+the nodes of a contact network.
+
+
+\subsection{Adding recovery: from SI to SIR}
+
+The SI model assumes that an infected individual remains infected forever. The
+SIR model adds a recovered state $R$. For population fractions,
+\[
+    S(t)+I(t)+R(t)=1,
+\]
+and the dynamics are
+\begin{align}
+    \frac{dS}{dt} &= -\beta SI, \\
+    \frac{dI}{dt} &=  \beta SI-\gamma I, \\
+    \frac{dR}{dt} &=  \gamma I .
+\end{align}
+The new parameter $\gamma>0$ is the recovery rate. The infection term is the
+same one already studied in the SI model. The only new process is
+\[
+    I \longrightarrow R,
+\]
+which removes infected individuals at rate $\gamma I$.
+
+Thus the move from SI to SIR does not introduce a new modelling principle. It
+only enlarges the state from
+\[
+    \mathbf{x}=(S,I)^\top
+\]
+to
+\[
+    \mathbf{x}=(S,I,R)^\top
+\]
+and changes the vector field accordingly.
+
+
+\subsection{From one population to one state per node}
+
+The well-mixed equations still assume that every susceptible individual can
+interact equally with every infected individual. To model a contact structure,
+let
+\[
+    G=(V,E)
+\]
+be a graph with $n=|V|$ nodes and adjacency matrix
+$A\in\mathbb{R}^{n\times n}$. The entry $A_{ij}$ describes whether node $i$
+can interact with node $j$.
+
+For every node $i$, define
+\[
+    s_i(t),\qquad i_i(t),\qquad r_i(t)
+\]
+as the probabilities of being susceptible, infectious, and recovered. They
+satisfy
+\[
+    s_i+i_i+r_i=1.
+\]
+Collecting all nodes gives the vectors
+\[
+    \mathbf{s},\mathbf{i},\mathbf{r}\in\mathbb{R}^n.
+\]
+
+The complete epidemic state can therefore be written as the matrix
+\begin{equation}
+    X(t)=
+    \begin{pmatrix}
+        s_1(t) & i_1(t) & r_1(t)\\
+        s_2(t) & i_2(t) & r_2(t)\\
+        \vdots & \vdots & \vdots\\
+        s_n(t) & i_n(t) & r_n(t)
+    \end{pmatrix}
+    \in\mathbb{R}^{n\times 3}.
+    \label{eq:network-state-matrix}
+\end{equation}
+Each row describes one node and each column one epidemic state.
+
+This is the network analogue of the vector
+$(S,I)^\top$ used in Section~\ref{sec:si}. The main difference is dimension:
+instead of evolving two population-level variables, the model now evolves
+state information for every node.
+
+
+\subsection{A vector form of the approximate network dynamics}
+
+Under a simple independence approximation, the node-level equations can be
+written compactly as
+\begin{equation}
+    \frac{d}{dt}
+    \begin{pmatrix}
+        \mathbf{s}\\
+        \mathbf{i}\\
+        \mathbf{r}
+    \end{pmatrix}
+    =
+    \begin{pmatrix}
+        -\beta\,\mathbf{s}\odot(A\mathbf{i})\\[3pt]
+         \beta\,\mathbf{s}\odot(A\mathbf{i})-\gamma\mathbf{i}\\[3pt]
+         \gamma\mathbf{i}
+    \end{pmatrix},
+    \label{eq:network-sir-vector}
+\end{equation}
+where $\odot$ denotes elementwise multiplication.
+
+Equation~\eqref{eq:network-sir-vector} is the direct network counterpart of
+Equation~\eqref{eq:si-vector}. The vector $A\mathbf{i}$ has one entry per node.
+Its $i$th entry,
+\[
+    (A\mathbf{i})_i=\sum_j A_{ij}i_j,
+\]
+summarizes the infectious pressure coming from the neighbours of node $i$.
+Multiplying this quantity by $s_i$ gives the rate at which node $i$ loses
+susceptibility.
+
+This representation is useful because it shows that moving from the SI model
+to a network has not changed the Neural ODE principle. We still have
+\[
+    \dot{\mathbf{x}}=f(\mathbf{x}),
+\]
+but $\mathbf{x}$ is now a much larger state and the vector field also depends
+on the graph structure $A$.
+
+
+\subsection{Why the simple network equations are only an approximation}
+
+There is an important difficulty hidden in
+Equation~\eqref{eq:network-sir-vector}. In the exact stochastic network model,
+the infection probability of node $i$ depends on a joint event: node $i$ must
+be susceptible while one of its neighbours $j$ is infected. For example,
+\begin{equation}
+    \frac{dP(X_i=S)}{dt}
+    =
+    -\beta\sum_j
+    A_{ij}\,
+    P(X_i=S,\;X_j=I).
+    \label{eq:exact-node}
+\end{equation}
+The individual probabilities $P(X_i=S)$ and $P(X_j=I)$ are therefore not
+enough to evaluate the derivative.
+
+A simple closure replaces the joint probability by
+\[
+    P(X_i=S,\;X_j=I)
+    \approx
+    P(X_i=S)P(X_j=I).
+\]
+This produces the compact equations above, but it ignores correlations between
+neighbouring nodes.
+
+The exact problem also becomes large very quickly. Since each of $n$ nodes can
+be in one of the three states $S$, $I$, or $R$, the complete stochastic
+network has $3^n$ possible global configurations. Rather than explicitly
+tracking this exponentially large state space, practical models introduce
+approximations. GN-ODE can be understood as one attempt to retain the useful
+SIR structure while adding learnable components that compensate for some of
+the information lost by the simplified representation.
+
+
+% ===========================================================================
+\section{GN-ODE as an Extension of the Simple Neural ODE}
+\label{sec:gnode}
+% ===========================================================================
+
+The examples in Sections~\ref{sec:si-node}--\ref{sec:si-experiments} make it
+possible to describe the Graph Neural ODE without introducing a completely new
+set of concepts.
+
+For the SI experiment, the model had the form
+\[
+    \dot{\mathbf{x}}=f_\theta(\mathbf{x}),
+    \qquad
+    \mathbf{x}=(S,I)^\top.
+\]
+For a network, the same idea becomes schematically
+\[
+    \dot{X}=f_\theta(X,A),
+\]
+where $X$ contains the node states and $A$ supplies the information about which
+nodes interact.
+
+
+\subsection{Encode, evolve, decode}
+
+The GN-ODE model of Kosma et al.\ (2023) follows an
+\emph{encode--evolve--decode} structure.
+
+First, the observed node states are transformed into hidden representations by
+a trainable encoder. Instead of evolving the binary input states directly, the
+model works with hidden susceptible, infectious, and recovered
+representations.
+
+Second, these hidden variables evolve inside an ODE solver. Their dynamics
+retain the structure of the SIR equations. In simplified notation,
+\begin{align}
+    \frac{dS}{dt}
+        &= -\beta\,(A I_h)\odot S_h,\\
+    \frac{dI}{dt}
+        &=  \beta\,(A I_h)\odot S_h-\gamma I_h,\\
+    \frac{dR}{dt}
+        &=  \gamma I_h.
+    \label{eq:gnode-core}
+\end{align}
+Here $S_h$ and $I_h$ are learned hidden representations, while multiplication
+by $A$ aggregates information from neighbouring nodes.
+
+Finally, a trainable decoder maps the evolved hidden states back to
+probabilities of the observable states $S$, $I$, and $R$.
+
+The important point is that the ODE solver has exactly the same role as in the
+simple examples. It does not learn anything. It repeatedly evaluates the
+right-hand side and integrates the state forward in time. The learnable
+components determine the representation and therefore the vector field that
+the solver follows.
+
+
+\subsection{Relation to the previous examples}
+
+Table~\ref{tab:progression} summarizes the progression of the report.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabularx}{\textwidth}{lXXX}
+\toprule
+Model & State & Right-hand side & What is learned\\
+\midrule
+Exponential decay
+&
+$y$
+&
+$-\theta y$
+&
+decay rate $\theta$
+\\
+
+Structured SI Neural ODE
+&
+$(S,I)$
+&
+$(-\theta SI,\theta SI)$
+&
+infection rate $\theta$
+\\
+
+Black-box SI Neural ODE
+&
+$(S,I)$
+&
+MLP $f_\theta(S,I)$
+&
+complete local vector field
+\\
+
+GN-ODE
+&
+node-level hidden states
+&
+SIR-shaped graph dynamics
+&
+hidden representations and mappings
+\\
+\bottomrule
+\end{tabularx}
+\caption{The same Neural ODE idea at increasing levels of complexity.}
+\label{tab:progression}
+\end{table}
+
+The table also clarifies why the simple experiments are useful. GN-ODE is not
+a fundamentally different mechanism. It is a larger, graph-structured version
+of the same construction:
+\[
+    \text{state}
+    \rightarrow
+    \text{learned local dynamics}
+    \rightarrow
+    \text{ODE solver}
+    \rightarrow
+    \text{trajectory}.
+\]
+
+
+% ===========================================================================
+\section{Published Evaluation of GN-ODE}
+\label{sec:published-results}
+% ===========================================================================
+
+The experiments in Section~\ref{sec:si-experiments} are small simulations
+performed specifically for this report. This section is different: it
+summarizes the experiments reported by Kosma et al.\ (2023) and should
+therefore be interpreted as results from the literature rather than as my own
+experiments.
+
+The authors evaluate GN-ODE on several social and communication networks of
+different sizes. Epidemic trajectories are generated for different infection
+and recovery parameters, and Monte Carlo simulations are used as the reference
+solution. GN-ODE is compared with both learning-based and classical epidemic
+prediction methods.
+
+
+\subsection{Prediction on the same network}
+
+In the first setting, training and test trajectories come from the same graph,
+but the epidemic parameters vary between simulations. This asks whether the
+model has learned dynamics that remain useful when the infection and recovery
+rates change.
+
+Kosma et al.\ report that GN-ODE achieves prediction errors comparable to or
+lower than the learning-based baselines on the networks considered. Classical
+Dynamic Message Passing remains highly accurate in several settings, but its
+computational cost becomes increasingly important on large graphs.
+
+The relevant interpretation for this report is not that one method always
+dominates the others. Rather, GN-ODE attempts to occupy an intermediate
+position: it keeps explicit epidemic structure, gains flexibility from learned
+representations, and can be evaluated without performing a large number of
+Monte Carlo simulations for every new prediction.
+
+
+\subsection{Transfer to larger unseen networks}
+
+A second experiment is particularly relevant to the idea of learning a
+dynamical rule rather than memorizing one trajectory. The model is trained on
+smaller graphs and then evaluated on larger networks that were not present
+during training.
+
+Kosma et al.\ report that GN-ODE transfers more successfully than the standard
+graph-neural baseline in this setting. Dynamic Message Passing remains a strong
+accuracy reference, but it is an algorithm that must be executed again on each
+new graph rather than a trained model whose parameters can be reused.
+
+This experiment is the network-scale analogue of changing the initial
+condition in Section~\ref{sec:exp3}. In both cases, the objective is to reuse
+the same learned local rule in a situation that was not presented exactly
+during training. The network experiment is substantially harder, however,
+because not only the initial state but also the number of nodes and the graph
+structure can change.
+
+
+% ===========================================================================
+\section{Critical Analysis}
+\label{sec:critical}
+% ===========================================================================
+
+The simple experiments and the GN-ODE application illustrate both the appeal
+and the limitations of Neural ODEs.
+
+\subsection{What the simple experiments establish}
+
+The decay and SI experiments make three aspects of the method directly
+observable. First, the object being learned is a derivative function rather
+than a complete solution curve. Second, the ODE solver and the neural network
+have separate roles: the network supplies local rates of change and the solver
+integrates them. Third, prior scientific knowledge can be incorporated at
+different levels. Learning only $\beta$ in the structured SI model assumes
+almost the complete equation, whereas the black-box SI experiment places much
+less structure in the model.
+
+These examples are intentionally controlled. The training data are generated
+from equations that are already known and contain no observational noise.
+Their purpose is therefore not to demonstrate an advantage over classical
+epidemic modelling. Their purpose is to make the Neural ODE mechanism
+verifiable.
+
+
+\subsection{A limitation visible already in the SI experiment}
+
+The unstructured SI experiment also illustrates an important limitation.
+Because normalized SI trajectories satisfy
+\[
+    S+I=1,
+\]
+all physically valid training data lie on a one-dimensional subset of the
+two-dimensional $(S,I)$ plane. The loss therefore constrains
+$f_\theta(S,I)$ mainly on or near this line. Its behaviour far away from the
+observed trajectories is not identified by the data.
+
+For the same reason, testing the model at $I_0=0.07$ is useful as an
+interpolation test, but it should not be interpreted as strong evidence of
+general out-of-distribution generalization. The new state still lies on the
+same invariant manifold and between initial conditions seen during training.
+
+This observation is important for larger Neural ODEs as well: a learned vector
+field is only supported empirically in regions of state space that are
+sufficiently constrained by the training trajectories.
+
+
+\subsection{Strengths and limitations of GN-ODE}
+
+The main strength of GN-ODE is the combination of explicit model structure and
+learning. The SIR mechanism and graph interactions are not discarded, so the
+model begins with useful scientific information instead of learning epidemic
+dynamics entirely from scratch. At the same time, trainable hidden
+representations give the model more flexibility than a fixed mean-field
+approximation.
+
+There are also costs. The model depends on repeated numerical solution of an
+ODE, so computational cost and numerical error depend on the chosen solver and
+step size or tolerance. In addition, although the SIR structure remains
+visible, the hidden representations produced by the learned transformations
+are less directly interpretable than the original probabilities
+$s_i$, $i_i$, and $r_i$.
+
+Most importantly, the presence of an ODE does not by itself guarantee correct
+extrapolation. The vector field is still learned from finite training data.
+The same warning seen in the SI experiment therefore remains valid on a much
+larger scale: predictions are most credible when the training data constrain
+the regions of state space and graph structures that the model will encounter.
+
+
+% ===========================================================================
+\section{Summary and Conclusion}
+% ===========================================================================
+
+This report approached Neural Ordinary Differential Equations from a sequence
+of models whose behaviour could first be understood directly.
+
+The starting point was exponential decay,
+\[
+    \dot y=-\lambda y.
+\]
+This example separated three objects that remain distinct throughout the
+report: the current state, the derivative rule, and the trajectory produced by
+solving the ODE. Replacing the known decay rate by a trainable parameter then
+showed, in the simplest possible setting, what learning an ODE means.
+
+The same construction was next applied to the SI epidemic model. The state
+became two-dimensional,
+\[
+    \mathbf{x}=(S,I)^\top,
+\]
+but the Neural ODE mechanism did not change. A structured model learned an
+unknown infection rate, while an unstructured model treated the complete
+vector field as the learnable object. The SI example also made the geometric
+meaning of a vector field visible and showed why predictions from unseen
+initial conditions are obtained by integrating the same learned dynamics from
+a new starting state.
+
+Finally, the same viewpoint was used to interpret GN-ODE. The state is enlarged
+from a few population variables to representations associated with all nodes
+of a contact graph, and the adjacency matrix determines which nodes can
+interact. Nevertheless, the central computation remains
+\[
+    \text{state}
+    \rightarrow
+    f_\theta
+    \rightarrow
+    \text{derivative}
+    \rightarrow
+    \text{ODE solver}
+    \rightarrow
+    \text{trajectory}.
+\]
+
+The main lesson is therefore not that Neural ODEs replace differential-equation
+models. Their usefulness is clearest when the two approaches are combined:
+known mechanisms can determine part of the vector field, while learnable
+components represent effects that are difficult to specify analytically. The
+simple decay and SI experiments make this principle explicit; GN-ODE shows how
+the same principle can be extended to a substantially larger scientific
+problem.
+
+
+% ===========================================================================
+\section{References}
+% ===========================================================================
+
+{\small
+\begin{description}[leftmargin=*,itemsep=2pt]
+
+\item[Chen et al.\ (2018)]
+Chen, R.\ T.\ Q., Rubanova, Y., Bettencourt, J., \& Duvenaud, D.\ K.
+\emph{Neural Ordinary Differential Equations}.
+Advances in Neural Information Processing Systems 31.
+
+\item[Kosma et al.\ (2023)]
+Kosma, C., Nikolentzos, G., Panagopoulos, G., Steyaert, J.-M., \&
+Vazirgiannis, M.
+\emph{Neural Ordinary Differential Equations for Modeling Epidemic Spreading}.
+Transactions on Machine Learning Research.
+
+\end{description}
+}
+
+\end{document}

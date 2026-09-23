@@ -1,0 +1,15 @@
+[project]
+name = "neural-odes-seminar"
+version = "0.1.0"
+description = "Small, reproducible Neural ODE experiments for a bachelor seminar report."
+requires-python = ">=3.13"
+dependencies = [
+  "torch==2.14.0+cpu",
+  "numpy>=2.0",
+  "matplotlib>=3.9",
+  "jupyter>=1.1",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
