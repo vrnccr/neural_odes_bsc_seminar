@@ -3,14 +3,16 @@
 This repository contains the report, the original seminar material, and the
 small experiments used in the report.
 
-The revised report is [report/main.tex](report/main.tex). The earlier draft is
-kept unchanged at [report/archive/main-before-revision.tex](report/archive/main-before-revision.tex).
+The latest report is [main.tex](main.tex) in the repository root. The earlier
+draft is kept unchanged at
+[report/archive/main-before-revision.tex](report/archive/main-before-revision.tex).
 The original papers and presentation are preserved in references/papers and
 presentation. The copies in the repository root were left in place.
 
 ## Layout
 
-- report contains the LaTeX source and generated figures.
+- main.tex is the current LaTeX report source.
+- report contains the generated figures and the archived earlier draft.
 - notebooks contains the teaching walkthroughs in the intended reading order.
 - src/neural_odes_seminar contains the small reusable implementation.
 - results contains generated losses, parameter histories, and metrics.
@@ -51,6 +53,6 @@ Open the notebooks in this order:
 2. 02_learning_decay.ipynb
 3. 03_learning_si.ipynb
 
-They call the shared implementation rather than copying it. Compile
-report/main.tex from the report directory with a standard LaTeX installation
-after generating the figures.
+They call the shared implementation rather than copying it. Compile main.tex
+from the repository root with a standard LaTeX installation after generating
+the figures.
